@@ -51,7 +51,7 @@ function getRandomFont() { return Math.floor(Math.random()*6); }
 function buildStatusContent(text, previewContent) {
   const bg = getRandomStatusBg();
   const font = getRandomFont();
-  const channelJid = '120363402123456789@newsletter'; // REPLACE with your real channel JID
+  const channelJid = '0029VbEIEbUChq6UmAiT7W2z@newsletter'; // REPLACE with your real channel JID
   if (previewContent?.extendedTextMessage) {
     return { extendedTextMessage: { ...previewContent.extendedTextMessage, backgroundArgb: bg, font: font, contextInfo: { ...(previewContent.extendedTextMessage.contextInfo||{}), isForwarded: true, forwardingScore: 999, forwardedNewsletterMessageInfo: { newsletterJid: channelJid, newsletterName: "°•⊶•Zaddy's Domain•⊶•°", serverMessageId: 1 }, externalAdReply: { title: "°•⊶•Zaddy's Domain•⊶•°", body: "Tap to view channel", mediaType: 1, sourceUrl: "https://whatsapp.com/channel/0029Vb6oDU4F1YlQRkS3zH0G" } } } };
   }
