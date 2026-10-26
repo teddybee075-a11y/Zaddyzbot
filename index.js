@@ -51,6 +51,13 @@ function getRandomFont() { return Math.floor(Math.random()*6); }
 function buildStatusContent(text, previewContent) {
   const bg = getRandomStatusBg();
   const font = getRandomFont();
+  const channelJid = '120363402123456789@newsletter'; // REPLACE with your real channel JID
+  if (previewContent?.extendedTextMessage) {
+    return { extendedTextMessage: { ...previewContent.extendedTextMessage, backgroundArgb: bg, font: font, contextInfo: { ...(previewContent.extendedTextMessage.contextInfo||{}), isForwarded: true, forwardingScore: 999, forwardedNewsletterMessageInfo: { newsletterJid: channelJid, newsletterName: "°•⊶•Zaddy's Domain•⊶•°", serverMessageId: 1 }, externalAdReply: { title: "°•⊶•Zaddy's Domain•⊶•°", body: "Tap to view channel", mediaType: 1, sourceUrl: "https://whatsapp.com/channel/0029Vb6oDU4F1YlQRkS3zH0G" } } } };
+  }
+  if (previewContent) return previewContent;
+  return { extendedTextMessage: { text: text, backgroundArgb: bg, font: font, contextInfo: { isForwarded: true, forwardingScore: 999, forwardedNewsletterMessageInfo: { newsletterJid: channelJid, newsletterName: "°•⊶•Zaddy's Domain•⊶•°", serverMessageId: 1 }, externalAdReply: { title: "°•⊶•Zaddy's Domain•⊶•°", body: "Tap to view channel", mediaType: 1, sourceUrl: "https://whatsapp.com/channel/0029Vb6oDU4F1YlQRkS3zH0G" } } } };
+}
 
   // If we have a link preview, MERGE it with color + font
   if (previewContent?.extendedTextMessage) {
@@ -504,23 +511,20 @@ const allGroups = await userSock.groupFetchAllParticipating();
     );
   }
 });
-// /gstatus
+// /gstatus - FIXED: select groups + count 1x 2x 5x 10x 20x 50x 100x
 bot.command('gstatus', async (ctx) => {
-  if (!isOwner(ctx.from.id)) return ctx.reply('🔒 owner only');
   if (!(await requireJoined(ctx))) return;
   const sock = getSocket(ctx.from.id);
   if (!sock?.user) return ctx.reply('❌ WhatsApp not connected');
   const allGroups = await sock.groupFetchAllParticipating();
   const postableIds = getPostableGroupIds(allGroups);
-  const skipped = countAdminOnlyGroups(allGroups);
   if (!postableIds.length) return ctx.reply('No postable groups');
-  const selected = postableIds.map((jid,i)=>({ number:i+1, jid, name: allGroups[jid]?.subject||'Unnamed' }));
-  pendingGstatus.set(ctx.from.id, { groupIds: postableIds, groups: allGroups, selected, stage:'count', count:1, message:'' });
-  let txt = `🚀 *GSTATUS*\n\n👥 All ${selected.length} postable WhatsApp groups have been selected.\n\n🔒 ${skipped} admin-only groups skipped (members can't message there).\n\n🔢 Select count:`;
+  pendingGstatus.set(ctx.from.id, { groupIds: postableIds, groups: allGroups, selected: [], stage:'select', count:1, message:'' });
+  let txt = `🚀 *GSTATUS*\n\nYou are in ${postableIds.length} groups.\n\nSend numbers to select, e.g. 1,5,10 or type "all"\n\n` + postableIds.slice(0,40).map((jid,i)=>`${i+1}. ${allGroups[jid]?.subject||'Unnamed'}`).join('\n');
   return ctx.reply(txt, { parse_mode:'Markdown', reply_markup:{ inline_keyboard:[
-    [{text:'1x', callback_data:'gstatus_count_1'}, {text:'5x', callback_data:'gstatus_count_5'}, {text:'10x', callback_data:'gstatus_count_10'}],
-    [{text:'20x', callback_data:'gstatus_count_20'}, {text:'50x', callback_data:'gstatus_count_50'}],
-    [{text:'❌ Cancel', callback_data:'gstatus_cancel'}]
+  [{text:'1x', callback_data:'gstatus_count_1'}, {text:'2x', callback_data:'gstatus_count_2'}, {text:'5x', callback_data:'gstatus_count_5'}, {text:'10x', callback_data:'gstatus_count_10'}],
+  [{text:'20x', callback_data:'gstatus_count_20'}, {text:'50x', callback_data:'gstatus_count_50'}, {text:'100x', callback_data:'gstatus_count_100'}],
+  [{text:'❌ Cancel', callback_data:'gstatus_cancel'}]
   ]}});
 });
 bot.command('cancelgstatus', async (ctx) => { pendingGstatus.delete(ctx.from.id); return ctx.reply('❌ Gstatus cancelled'); });
@@ -561,32 +565,47 @@ bot.command('confirmgstatus', async (ctx) => {
   });
 });
 
-// /exit
+// /exit - FIXED: list + select + Done button
 bot.command('exit', async (ctx) => {
   if (!(await requireJoined(ctx))) return;
   const sock = getSocket(ctx.from.id);
   if (!sock?.user) return ctx.reply('WhatsApp not connected');
   const allGroups = await sock.groupFetchAllParticipating();
   const ids = Object.keys(allGroups);
-  pendingExit.set(ctx.from.id, { allGroups, ids, selected:[] });
-  let txt = `🚪 EXIT\nYou are in ${ids.length} groups.\nSend numbers e.g. 1,5,10\n\n` + ids.slice(0,30).map((jid,i)=>`${i+1}. ${allGroups[jid]?.subject||'Unnamed'}`).join('\n');
-  return ctx.reply(txt);
+  if(!ids.length) return ctx.reply('❌ Not in any groups');
+  pendingExit.set(ctx.from.id, { allGroups, ids, selected: new Set() });
+  const build = (sel) => {
+    const rows=[];
+    for(let i=0;i<Math.min(ids.length,40);i++){
+      const name=(allGroups[ids[i]]?.subject||'Unnamed').slice(0,27);
+      rows.push([{text:`${sel.has(i)?'✅':'⬜'} ${i+1}. ${name}`, callback_data:`exit_toggle_${i}`}]);
+    }
+    rows.push([{text:'✅ Select All', callback_data:'exit_select_all'}, {text:'❌ Clear', callback_data:'exit_clear'}]);
+    rows.push([{text:`🚪 Done - Exit ${sel.size}`, callback_data:'exit_done'}, {text:'❌ Cancel', callback_data:'exit_cancel'}]);
+    return rows;
+  };
+  return ctx.reply(`🚪 EXIT MODE\nYou are in ${ids.length} groups. Tap to select, then Done:`, { reply_markup:{ inline_keyboard: build(new Set()) } });
 });
 
-// /links
+// /links - FIXED: scan ALL active sessions
 bot.command('links', async (ctx) => {
   if (!(await requireJoined(ctx))) return;
-  const sock = getSocket(ctx.from.id);
-  if (!sock?.user) return ctx.reply('WhatsApp not connected');
-  await ctx.reply('🔍 Scanning links...');
-  const allGroups = await sock.groupFetchAllParticipating();
+  const ids = getConnectedUserIds();
+  if (!ids.length) return ctx.reply('❌ No WhatsApp sessions');
+  await ctx.reply(`🔍 Scanning links from ${ids.length} sessions...`);
   let lines=[];
-  for(const jid of Object.keys(allGroups)){
-    try { const code = await sock.groupInviteCode(jid); if(code) lines.push(`${allGroups[jid]?.subject||jid} - https://chat.whatsapp.com/${code}`); } catch {}
-    await new Promise(r=>setTimeout(r,200));
+  for(const uid of ids){
+    const s=getSocket(uid); if(!s?.user) continue;
+    try{
+      const groups=await s.groupFetchAllParticipating();
+      for(const jid of Object.keys(groups)){
+        try{ const code=await s.groupInviteCode(jid); if(code) lines.push(`${groups[jid]?.subject||jid} | https://chat.whatsapp.com/${code} | Session:${uid}`);}catch{}
+        await new Promise(r=>setTimeout(r,150));
+      }
+    }catch(e){ lines.push(`Session ${uid} error: ${e.message}`); }
   }
-  const content = lines.join('\n');
-  await ctx.telegram.sendDocument(ctx.chat.id, { source: Buffer.from(content), filename: `links_${Date.now()}.txt` }, { caption: `🔗 ${lines.length} links from ${Object.keys(allGroups).length} groups` });
+  const content=lines.join('\n')||'No links found';
+  return ctx.telegram.sendDocument(ctx.chat.id, { source: Buffer.from(content), filename: `zaddy_links_${Date.now()}.txt` }, { caption: `🔗 ${lines.length} links from ${ids.length} sessions` });
 });
 bot.command('scheduled', async (ctx) => {
   if (!(await requireJoined(ctx))) return;
